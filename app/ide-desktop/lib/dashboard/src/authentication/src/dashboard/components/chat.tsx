@@ -402,7 +402,6 @@ export default function Chat(props: ChatProps) {
     const [isAtBottom, setIsAtBottom] = React.useState(true)
     const [messagesHeightBeforeMessageHistory, setMessagesHeightBeforeMessageHistory] =
         React.useState<number | null>(null)
-    // TODO: proper URL
     const [websocket] = React.useState(() => new WebSocket(config.ACTIVE_CONFIG.chatUrl))
     const [right, setTargetRight] = animations.useInterpolateOverTime(
         animations.interpolationFunctionEaseInOut,
@@ -418,10 +417,17 @@ export default function Chat(props: ChatProps) {
         setIsPaidUser(false)
     }, [])
 
+    let runNumber = 1
     React.useEffect(() => {
+        if (runNumber++ === 1) {
+            // eslint-disable-next-line no-restricted-syntax
+            return
+        }
         return () => {
             websocket.close()
         }
+        // `runNumber` is NOT a dependency.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [websocket])
 
     React.useLayoutEffect(() => {
@@ -694,6 +700,9 @@ export default function Chat(props: ChatProps) {
             <div
                 style={{ right }}
                 className="text-xs text-chat flex flex-col fixed top-0 right-0 h-screen bg-ide-bg border-ide-bg-dark border-l-2 w-83.5 py-1 z-1"
+                onKeyDown={event => {
+                    event.stopPropagation()
+                }}
             >
                 <ChatHeader
                     threads={threads}
