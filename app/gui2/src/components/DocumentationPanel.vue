@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { Item as Breadcrumb } from '@/components/DocumentationPanel/DocsBreadcrumbs.vue'
-import Breadcrumbs from '@/components/DocumentationPanel/DocsBreadcrumbs.vue'
+import DocsBreadcrumbs from '@/components/DocumentationPanel/DocsBreadcrumbs.vue'
 import DocsExamples from '@/components/DocumentationPanel/DocsExamples.vue'
 import DocsHeader from '@/components/DocumentationPanel/DocsHeader.vue'
 import DocsList from '@/components/DocumentationPanel/DocsList.vue'
@@ -18,7 +18,7 @@ import type { QualifiedName } from '@/util/qualifiedName'
 import { qnSegments, qnSlice } from '@/util/qualifiedName'
 import { computed, watch } from 'vue'
 
-const props = defineProps<{ selectedEntry: Opt<SuggestionId> }>()
+const props = defineProps<{ breadcrumbsDisabled?: boolean; selectedEntry: Opt<SuggestionId> }>()
 const emit = defineEmits<{ 'update:selectedEntry': [id: SuggestionId] }>()
 const db = useSuggestionDbStore()
 
@@ -117,8 +117,9 @@ function handleBreadcrumbClick(index: number) {
 <template>
   <div class="DocumentationPanel scrollable" @wheel.stop.passive>
     <h1 v-if="documentation.kind === 'Placeholder'">{{ documentation.text }}</h1>
-    <Breadcrumbs
+    <DocsBreadcrumbs
       v-if="!isPlaceholder"
+      :disabled="props.breadcrumbsDisabled"
       :breadcrumbs="breadcrumbs"
       :color="color"
       :icon="icon"

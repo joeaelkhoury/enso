@@ -88,18 +88,22 @@ export function useNavigator(viewportNode: Ref<Element | undefined>) {
   }
 
   let zoomPivot = Vec2.Zero
-  const zoomPointer = usePointer((pos, _event, ty) => {
-    if (ty === 'start') {
-      zoomPivot = clientToScenePos(pos.initial)
-    }
+  const zoomPointer = usePointer(
+    (pos, _event, ty) => {
+      if (ty === 'start') {
+        zoomPivot = clientToScenePos(pos.initial)
+      }
 
-    const prevScale = scale.value
-    scale.value = Math.max(0.1, Math.min(10, scale.value * Math.exp(-pos.delta.y / 100)))
-    center.value = center.value
-      .sub(zoomPivot)
-      .scale(prevScale / scale.value)
-      .add(zoomPivot)
-  }, PointerButtonMask.Secondary)
+      const prevScale = scale.value
+      scale.value = Math.max(0.1, Math.min(10, scale.value * Math.exp(-pos.delta.y / 100)))
+      center.value = center.value
+        .sub(zoomPivot)
+        .scale(prevScale / scale.value)
+        .add(zoomPivot)
+    },
+    PointerButtonMask.Secondary,
+    (event) => !event.ctrlKey,
+  )
 
   const viewport = computed(() => {
     const nodeSize = size.value

@@ -126,10 +126,12 @@ export const widgetDefinition = defineWidget([ArgumentPlaceholder, ArgumentAst],
     </div>
   </div>
 </template>
+
 <style scoped>
 .SelectionWidgetArgumentValue {
   margin-left: 8px;
 }
+
 .SelectionWidgetSingleChoice {
   position: absolute;
   top: 100%;

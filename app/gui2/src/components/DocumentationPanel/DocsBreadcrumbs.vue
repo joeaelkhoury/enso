@@ -12,6 +12,7 @@ const props = defineProps<{
   breadcrumbs: Item[]
   color: string
   icon: Icon
+  disabled?: boolean
   canGoForward: boolean
   canGoBackward: boolean
 }>()
@@ -28,7 +29,7 @@ function shrinkFactor(index: number): number {
 
 <template>
   <div class="Breadcrumbs" :style="{ 'background-color': color }">
-    <div class="breadcrumbs-controls">
+    <div v-if="!props.disabled" class="breadcrumbs-controls">
       <SvgIcon
         name="arrow_left"
         draggable="false"
@@ -46,6 +47,7 @@ function shrinkFactor(index: number): number {
       <template v-for="(breadcrumb, index) in props.breadcrumbs" :key="[index, breadcrumb.label]">
         <SvgIcon v-if="index > 0" name="arrow_right_head_only" class="arrow" />
         <Breadcrumb
+          :disabled="props.disabled"
           :text="breadcrumb.label"
           :icon="index === props.breadcrumbs.length - 1 ? props.icon : undefined"
           :style="{ 'flex-shrink': shrinkFactor(index) }"
@@ -74,6 +76,7 @@ function shrinkFactor(index: number): number {
 
 .inactive {
   opacity: 0.3;
+  cursor: none;
 }
 
 .arrow {

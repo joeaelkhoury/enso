@@ -73,7 +73,7 @@ const NEXT_SORT_DIRECTION: Record<SortDirection, SortDirection> = {
   position: absolute;
   top: 100%;
   margin-top: 4px;
-  height: 136px;
+  max-height: 136px;
 }
 
 .list {

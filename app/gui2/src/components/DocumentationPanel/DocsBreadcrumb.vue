@@ -2,14 +2,14 @@
 import SvgIcon from '@/components/SvgIcon.vue'
 import type { Icon } from '@/util/iconName'
 
-const props = defineProps<{ text: string; icon?: Icon | undefined }>()
+const props = defineProps<{ disabled?: boolean; text: string; icon?: Icon | undefined }>()
 const emit = defineEmits<{ click: [] }>()
 </script>
 
 <template>
-  <div class="Breadcrumb">
+  <div class="Breadcrumb" :class="{ disabled: props.disabled }">
     <SvgIcon v-if="props.icon" :name="props.icon || ''" />
-    <span @pointerdown="emit('click')" v-text="props.text"></span>
+    <span @pointerdown="!props.disabled && emit('click')" v-text="props.text"></span>
   </div>
 </template>
 
@@ -21,6 +21,10 @@ const emit = defineEmits<{ click: [] }>()
   align-items: center;
   gap: 2px;
   overflow-x: hidden;
+
+  &.disabled {
+    cursor: none;
+  }
 }
 
 span {
