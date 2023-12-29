@@ -48,6 +48,7 @@ class ContextFactory {
     logMasking: Boolean,
     enableIrCaches: Boolean,
     disablePrivateCheck: Boolean           = false,
+    enableTypeCheck: Boolean               = false,
     strictErrors: Boolean                  = false,
     useGlobalIrCacheLocation: Boolean      = true,
     enableAutoParallelism: Boolean         = false,
@@ -87,6 +88,7 @@ class ContextFactory {
         RuntimeOptions.DISABLE_PRIVATE_CHECK,
         disablePrivateCheck.toString
       )
+      .option(RuntimeOptions.ENABLE_TYPE_CHECK, enableTypeCheck.toString)
       .option(DebugServerInfo.ENABLE_OPTION, "true")
       .option(RuntimeOptions.LOG_MASKING, logMasking.toString)
       .options(options)
