@@ -2,7 +2,6 @@ package org.enso.compiler.core.ir
 
 import org.enso.compiler.core.Implicits.{ShowPassData, ToStringHelper}
 import org.enso.compiler.core.{IR, Identifier}
-import org.enso.compiler.core.IR.randomId
 
 import java.util.UUID
 
@@ -53,7 +52,8 @@ object Function {
     passData: MetadataStorage,
     diagnostics: DiagnosticStorage
   ) extends Function
-      with IRKind.Primitive {
+      with IRKind.Primitive
+      with LazyId {
 
     if (bodySeq.length != 1) {
       throw new IllegalArgumentException(
@@ -71,8 +71,7 @@ object Function {
     ) = {
       this(arguments, Seq(body), location, canBeTCO, passData, diagnostics)
     }
-    var id: UUID @Identifier = randomId
-    override lazy val body   = bodySeq.head
+    override lazy val body = bodySeq.head
 
     /** Creates a copy of `this`.
       *
@@ -127,7 +126,7 @@ object Function {
           if (keepMetadata) passData.duplicate else new MetadataStorage(),
         diagnostics =
           if (keepDiagnostics) diagnostics.copy else DiagnosticStorage(),
-        id = if (keepIdentifiers) id else randomId
+        id = if (keepIdentifiers) id else null
       )
 
     /** @inheritdoc */
@@ -213,8 +212,8 @@ object Function {
     passData: MetadataStorage      = new MetadataStorage(),
     diagnostics: DiagnosticStorage = DiagnosticStorage()
   ) extends Function
-      with IRKind.Sugar {
-    var id: UUID @Identifier = randomId
+      with IRKind.Sugar
+      with LazyId {
 
     /** Creates a copy of `this`.
       *
@@ -285,7 +284,7 @@ object Function {
           if (keepMetadata) passData.duplicate else new MetadataStorage(),
         diagnostics =
           if (keepDiagnostics) diagnostics.copy else DiagnosticStorage(),
-        id = if (keepIdentifiers) id else randomId
+        id = if (keepIdentifiers) id else null
       )
 
     /** @inheritdoc */
