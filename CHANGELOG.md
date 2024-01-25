@@ -1024,6 +1024,7 @@
 - [Introduce Arrow language][8512]
 - [DataflowError.withoutTrace doesn't store stacktrace][8608]
 - [Derive --in-project from --run source location][8775]
+- [Check type of `self` when calling a method using the static syntax][8867]
 
 [3227]: https://github.com/enso-org/enso/pull/3227
 [3248]: https://github.com/enso-org/enso/pull/3248
@@ -1178,6 +1179,7 @@
 [8512]: https://github.com/enso-org/enso/pull/8512
 [8608]: https://github.com/enso-org/enso/pull/8608
 [8775]: https://github.com/enso-org/enso/pull/8775
+[8867]: https://github.com/enso-org/enso/pull/8867
 
 # Enso 2.0.0-alpha.18 (2021-10-12)
 
