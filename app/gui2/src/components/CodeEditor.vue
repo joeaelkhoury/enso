@@ -80,21 +80,25 @@ const expressionUpdatesDiagnostics = computed(() => {
 // == CodeMirror editor setup  ==
 
 const editorView = new EditorView()
+const viewReady = ref(false)
+let syncedCodeLength: number | undefined
 watchEffect(() => {
   const module = projectStore.module
   if (!module) return
-  /*
-  const yText = module.doc.contents
-  const undoManager = module.undoManager
-  const awareness = projectStore.awareness.internal
-  extensions: [yCollab(yText, awareness, { undoManager }), ...]
-   */
-  if (!graphStore.moduleSource.text) return
+  let updateListener = EditorView.updateListener.of((update) => {
+    if (syncedCodeLength === undefined) return
+    if (update.docChanged) {
+      const newCode = update.state.doc.toString()
+      syncedCodeLength = newCode.length
+      graphStore.edit((edit) => edit.syncToCode(newCode))
+    }
+  })
   editorView.setState(
     EditorState.create({
       doc: graphStore.moduleSource.text,
       extensions: [
         minimalSetup,
+        updateListener,
         syntaxHighlighting(defaultHighlightStyle as Highlighter),
         bracketMatching(),
         foldGutter(),
@@ -161,6 +165,17 @@ watchEffect(() => {
       ],
     }),
   )
+  viewReady.value = true
+  syncedCodeLength = undefined
+})
+watchEffect(() => {
+  if (!viewReady.value) return
+  const code = graphStore.moduleSource.text
+  if (!code) return
+  editorView.dispatch({
+    changes: { from: 0, to: syncedCodeLength ?? 0, insert: code },
+  })
+  syncedCodeLength = code.length
 })
 
 watch([executionContextDiagnostics, expressionUpdatesDiagnostics], () => forceLinting(editorView))
