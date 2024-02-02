@@ -1,9 +1,10 @@
 import { ComputedValueRegistry, type ExpressionInfo } from '@/stores/project/computedValueRegistry'
 import { SuggestionDb, groupColorStyle, type Group } from '@/stores/suggestionDatabase'
 import type { SuggestionEntry } from '@/stores/suggestionDatabase/entry'
-import { assert, bail } from '@/util/assert'
+import { assert } from '@/util/assert'
 import { Ast, RawAst } from '@/util/ast'
-import type { AstId } from '@/util/ast/abstract'
+import type { AstId, NodeMetadata } from '@/util/ast/abstract'
+import { subtrees } from '@/util/ast/abstract'
 import { AliasAnalyzer } from '@/util/ast/aliasAnalysis'
 import { nodeFromAst } from '@/util/ast/node'
 import { colorFromString } from '@/util/colors'
@@ -14,18 +15,12 @@ import { Vec2 } from '@/util/data/vec2'
 import { ReactiveDb, ReactiveIndex, ReactiveMapping } from '@/util/database/reactiveDb'
 import * as random from 'lib0/random'
 import * as set from 'lib0/set'
-import {
-  methodPointerEquals,
-  type ExpressionUpdate,
-  type MethodCall,
-  type StackItem,
-} from 'shared/languageServerTypes'
+import { methodPointerEquals, type MethodCall, type StackItem } from 'shared/languageServerTypes'
 import {
   isUuid,
   sourceRangeKey,
   visMetadataEquals,
   type ExternalId,
-  type NodeMetadata,
   type SourceRange,
   type VisualizationMetadata,
 } from 'shared/yjsModel'
@@ -135,6 +130,7 @@ export class GraphDb {
   private readonly idToExternalMap = reactive(new Map<Ast.AstId, ExternalId>())
   private readonly idFromExternalMap = reactive(new Map<ExternalId, Ast.AstId>())
   private bindings = new BindingsDb()
+  private currentFunction: AstId | undefined = undefined
 
   constructor(
     private suggestionDb: SuggestionDb,
@@ -333,31 +329,37 @@ export class GraphDb {
     functionAst_: Ast.Function,
     rawFunction: RawAst.Tree.Function,
     moduleCode: string,
-    getMeta: (id: ExternalId) => NodeMetadata | undefined,
     getSpan: (id: AstId) => SourceRange | undefined,
+    dirtyNodes: Set<AstId>,
   ) {
+    const functionChanged = functionAst_.id !== this.currentFunction
+    const knownDirtySubtrees = functionChanged ? null : subtrees(functionAst_.module, dirtyNodes)
+    const subtreeDirty = (id: AstId) => !knownDirtySubtrees || knownDirtySubtrees.has(id)
+    this.currentFunction = functionAst_.id
     const currentNodeIds = new Set<NodeId>()
     for (const nodeAst of functionAst_.bodyExpressions()) {
       const newNode = nodeFromAst(nodeAst)
       const nodeId = asNodeId(newNode.rootSpan.id)
       const node = this.nodeIdToNode.get(nodeId)
-      const externalId = this.idToExternal(nodeId)
-      const nodeMeta = externalId && getMeta(externalId)
+      const nodeMeta = (node ?? newNode).rootSpan.nodeMetadata
       currentNodeIds.add(nodeId)
       if (node == null) {
+        // We are notified of new or changed metadata by `updateMetadata`, so we only need to read existing metadata
+        // when we switch to a different function.
+        if (functionChanged) {
+          const pos = nodeMeta.get('position') ?? { x: 0, y: 0 }
+          newNode.position = new Vec2(pos.x, pos.y)
+          newNode.vis = nodeMeta.get('visualization')
+        }
         this.nodeIdToNode.set(nodeId, newNode)
       } else {
-        node.pattern = newNode.pattern
-        if (node.outerExprId !== newNode.outerExprId) {
-          node.outerExprId = newNode.outerExprId
-        }
-        node.rootSpan = newNode.rootSpan
-      }
-      if (nodeMeta) {
-        this.assignUpdatedMetadata(node ?? newNode, nodeMeta)
+        const differentOrDirty = (a: Ast.Ast | undefined, b: Ast.Ast | undefined) =>
+          a?.id !== b?.id || (a && subtreeDirty(a.id))
+        if (differentOrDirty(node.pattern, newNode.pattern)) node.pattern = newNode.pattern
+        if (node.outerExprId !== newNode.outerExprId) node.outerExprId = newNode.outerExprId
+        if (differentOrDirty(node.rootSpan, newNode.rootSpan)) node.rootSpan = newNode.rootSpan
       }
     }
-
     for (const nodeId of this.nodeIdToNode.keys()) {
       if (!currentNodeIds.has(nodeId)) {
         this.nodeIdToNode.delete(nodeId)
@@ -382,13 +384,15 @@ export class GraphDb {
     updateMap(this.idFromExternalMap, idFromExternalNew)
   }
 
-  assignUpdatedMetadata(node: Node, meta: NodeMetadata) {
-    const newPosition = new Vec2(meta.x, -meta.y)
-    if (!node.position.equals(newPosition)) {
-      node.position = newPosition
-    }
-    if (!visMetadataEquals(node.vis, meta.vis)) {
-      node.vis = meta.vis
+  updateMetadata(id: Ast.AstId, changes: NodeMetadata) {
+    const node = this.nodeIdToNode.get(id as NodeId)
+    if (!node) return
+    const newPos = changes.get('position')
+    const newPosVec = newPos && new Vec2(newPos.x, newPos.y)
+    if (newPosVec && !newPosVec.equals(node.position)) node.position = newPosVec
+    if (changes.has('visualization')) {
+      const newVis = changes.get('visualization')
+      if (!visMetadataEquals(newVis, node.vis)) node.vis = newVis
     }
   }
 
@@ -431,20 +435,6 @@ export class GraphDb {
     this.nodeIdToNode.set(asNodeId(id), node)
     this.bindings.bindings.set(bindingId, { identifier: binding, usages: new Set() })
     return node
-  }
-
-  mockExpressionUpdate(binding: string, update: Partial<ExpressionUpdate>) {
-    const nodeId = this.getIdentDefiningNode(binding)
-    if (nodeId == null) bail(`The node with identifier '${binding}' was not found.`)
-    const update_: ExpressionUpdate = {
-      expressionId: this.idToExternal(nodeId)!,
-      profilingInfo: update.profilingInfo ?? [],
-      fromCache: update.fromCache ?? false,
-      payload: update.payload ?? { type: 'Value' },
-      ...(update.type ? { type: update.type } : {}),
-      ...(update.methodCall ? { methodCall: update.methodCall } : {}),
-    }
-    this.valuesRegistry.processUpdates([update_])
   }
 }
 

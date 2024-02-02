@@ -79,10 +79,25 @@ const dynamicTags = computed<Tag[]>(() => {
 const tags = computed(() => (dynamicTags.value.length > 0 ? dynamicTags.value : staticTags.value))
 const tagLabels = computed(() => tags.value.map((tag) => tag.label ?? tag.expression))
 
+const removeSurroundingParens = (expr?: string) => expr?.trim().replaceAll(/(^[(])|([)]$)/g, '')
+
 const selectedIndex = ref<number>()
-const selectedTag = computed(() =>
-  selectedIndex.value != null ? tags.value[selectedIndex.value] : undefined,
-)
+const selectedTag = computed(() => {
+  if (selectedIndex.value != null) {
+    return tags.value[selectedIndex.value]
+  } else {
+    const currentExpression = removeSurroundingParens(WidgetInput.valueRepr(props.input))
+    if (!currentExpression) return undefined
+    // We need to find the tag that matches the (beginning of) current expression.
+    // To prevent partial prefix matches, we arrange tags in reverse lexicographical order.
+    const sortedTags = tags.value
+      .map((tag, index) => [removeSurroundingParens(tag.expression), index] as [string, number])
+      .sort(([a], [b]) => (a < b ? 1 : a > b ? -1 : 0))
+    const [_, index] = sortedTags.find(([expr]) => currentExpression.startsWith(expr)) ?? []
+    return index != null ? tags.value[index] : undefined
+  }
+})
+
 const selectedExpression = computed(() => {
   if (selectedTag.value == null) return WidgetInput.valueRepr(props.input)
   return selectedTag.value.expression
@@ -118,7 +133,7 @@ watch(selectedIndex, (_index) => {
 
 <script lang="ts">
 export const widgetDefinition = defineWidget(WidgetInput.isAstOrPlaceholder, {
-  priority: 999,
+  priority: 50,
   score: (props) => {
     if (props.input.dynamicConfig?.kind === 'Single_Choice') return Score.Perfect
     if (props.input[ArgumentInfoKey]?.info?.tagValues != null) return Score.Perfect
