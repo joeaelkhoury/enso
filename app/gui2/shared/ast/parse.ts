@@ -1,3 +1,4 @@
+import hash from 'hash-sum'
 import * as map from 'lib0/map'
 import {
   Token,
@@ -28,6 +29,7 @@ import {
   Ident,
   Import,
   Invalid,
+  MutableAst,
   MutableBodyBlock,
   MutableIdent,
   NegationApp,
@@ -59,23 +61,26 @@ export function abstract(
   module: MutableModule,
   tree: RawAst.Tree,
   code: string,
+  substitutes?: Map<NodeKey, Owned>,
 ): { root: Owned; spans: SpanMap; toRaw: Map<AstId, RawAst.Tree> } {
-  const abstractor = new Abstractor(module, code)
+  const abstractor = new Abstractor(module, code, substitutes)
   const root = abstractor.abstractTree(tree).node
   const spans = { tokens: abstractor.tokens, nodes: abstractor.nodes }
-  return { root, spans, toRaw: abstractor.toRaw }
+  return { root: root as Owned<MutableBodyBlock>, spans, toRaw: abstractor.toRaw }
 }
 
 class Abstractor {
   private readonly module: MutableModule
   private readonly code: string
+  private readonly substitutes: Map<NodeKey, Owned> | undefined
   readonly nodes: NodeSpanMap
   readonly tokens: TokenSpanMap
   readonly toRaw: Map<AstId, RawAst.Tree>
 
-  constructor(module: MutableModule, code: string) {
+  constructor(module: MutableModule, code: string, substitutes?: Map<NodeKey, Owned>) {
     this.module = module
     this.code = code
+    this.substitutes = substitutes
     this.nodes = new Map()
     this.tokens = new Map()
     this.toRaw = new Map()
@@ -88,6 +93,12 @@ class Abstractor {
     const codeStart = whitespaceEnd
     const codeEnd = codeStart + tree.childrenLengthInCodeParsed
     const spanKey = nodeKey(codeStart, codeEnd - codeStart)
+    if (this.substitutes?.has(spanKey)) {
+      // NOTE: Nodes in subtrees obtained from `substitutes` are not added to `nodes` / `tokens / `toRaw`.
+      const node = this.substitutes.get(spanKey)!
+      this.substitutes.delete(spanKey)
+      return { node, whitespace }
+    }
     let node: Owned
     switch (tree.type) {
       case RawAst.Tree.Type.BodyBlock: {
@@ -454,6 +465,7 @@ function fromRaw(
   const ast = abstract(module, tree, code)
   const spans = ast.spans
   // The root of the tree produced by the parser is always a `BodyBlock`.
+  assert(ast.root instanceof MutableBodyBlock)
   const root = ast.root as Owned<MutableBodyBlock>
   return { root, spans, toRaw: ast.toRaw }
 }
@@ -594,11 +606,109 @@ function resync(
     const goodAst = goodSpans.get(span)?.[0]
     // The parent of the root of a bad subtree must be a good AST.
     assertDefined(goodAst)
-    parent.replaceValue(edit.copy(goodAst))
+    parent.syncToCode(goodAst.code())
   }
 
   console.warn(
     `repair: Replaced ${parentsOfBadSubtrees.size} subtrees with their reparsed equivalents.`,
     parentsOfBadSubtrees,
   )
+}
+
+function hashString(s: string) {
+  return hash(s)
+}
+
+function hashSubtree(ast: Ast, hashesOut: Map<string, Ast[]>) {
+  let content = ''
+  content += ast.typeName + ':'
+  for (const child of ast.concreteChildren()) {
+    content += child.whitespace ?? ' '
+    if (isTokenId(child.node)) {
+      content += 'Token:' + hashString(ast.module.getToken(child.node).code())
+    } else {
+      content += hashSubtree(ast.module.checkedGet(child.node), hashesOut)
+    }
+  }
+  const astHash = hashString(content)
+  map.setIfUndefined(hashesOut, astHash, (): Ast[] => []).unshift(ast)
+  return astHash
+}
+
+function hashTree(root: Ast) {
+  const hashes = new Map<string, Ast[]>()
+  hashSubtree(root, hashes)
+  return hashes
+}
+
+function analyzeCode(code: string, asBlock: boolean) {
+  const rawParsed = parseEnso(code)
+  // NOTE: We could do the initial analysis much more efficiently by operating on the raw tree; we just need to separate
+  // the logic for mapping raw types to `Ast` from the actual construction of the `Ast` types.
+  const edit = MutableModule.Transient()
+  const parsed = abstract(edit, rawParsed, code)
+  assert(parsed.root instanceof MutableBodyBlock)
+  const parsedRoot: Ast =
+    parsed.root.lines.length === 1 && parsed.root.lines[0]?.expression && !asBlock
+      ? parsed.root.takeLines()[0]!.expression!.node
+      : parsed.root
+  const newSpans = new Map<AstId, NodeKey>()
+  for (const [key, asts] of parsed.spans.nodes) {
+    for (const ast of asts) newSpans.set(ast.id, key)
+  }
+  if (parsedRoot.id !== parsed.root.id) newSpans.delete(parsed.root.id)
+  return { parsedRoot, newSpans, rawParsed }
+}
+
+function findIdenticalSubtrees({
+  ast,
+  parsedRoot,
+  newSpans,
+}: {
+  ast: MutableAst
+  parsedRoot: Ast
+  newSpans: Map<AstId, NodeKey>
+}) {
+  const edit = ast.module
+  const oldAstByContent = hashTree(ast)
+  const newAstByContent = hashTree(parsedRoot)
+  const unchangedSubtrees = new Set<AstId>()
+  for (const [key, asts] of oldAstByContent) {
+    if (newAstByContent.has(key)) {
+      for (const ast of asts) unchangedSubtrees.add(ast.id)
+    }
+  }
+  if (unchangedSubtrees.has(ast.id)) return 'root' satisfies 'root'
+  const unchangedRootIds = new Set(subtreeRoots(ast.module, unchangedSubtrees))
+  const subtreesToReuse = new Map<NodeKey, Owned>()
+  for (const [key, asts] of oldAstByContent) {
+    const reusableSubtreeRoots = asts.filter((ast) => unchangedRootIds.has(ast.id))
+    const matchingNewAsts = newAstByContent.get(key)
+    for (;;) {
+      const goodOldAst = reusableSubtreeRoots.shift()
+      if (!goodOldAst) break
+      const matchingNewAst = matchingNewAsts!.shift()
+      if (!matchingNewAst) break
+      const newSpan = newSpans.get(matchingNewAst.id)!
+      subtreesToReuse.set(newSpan, edit.steal(goodOldAst.id))
+    }
+  }
+  return { subtreesToReuse }
+}
+
+export function syncToCode(ast: MutableAst, code: string) {
+  const edit = ast.module
+
+  // Content-hash `ast` and `parsedCode` to find unchanged-roots.
+  const { parsedRoot, newSpans, rawParsed } = analyzeCode(code, ast instanceof BodyBlock)
+  const matches = findIdenticalSubtrees({ ast, parsedRoot, newSpans })
+  if (matches === 'root') return
+  const { subtreesToReuse } = matches
+
+  // Re-abstract from the root down to the unchanged-roots.
+  // TODO(#8238):
+  //  - Match types top-down, to find the change-roots.
+  //  - Re-abstract only from the change-roots down to the unchanged-roots, keeping the top-level structure.
+  const parsedReusingSubtrees = abstract(edit, rawParsed, code, subtreesToReuse)
+  ast.replaceValueChecked(parsedReusingSubtrees.root)
 }

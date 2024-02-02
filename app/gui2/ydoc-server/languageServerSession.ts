@@ -5,12 +5,12 @@ import { ObservableV2 } from 'lib0/observable'
 import * as random from 'lib0/random'
 import * as Y from 'yjs'
 import {
-  Ast,
   MutableModule,
   parseBlockWithSpans,
   setExternalIds,
   spanMapToIdMap,
 } from '../shared/ast'
+import * as Ast from '../shared/ast'
 import { print } from '../shared/ast/parse'
 import { EnsoFileParts, combineFileParts, splitFileContents } from '../shared/ensoFile'
 import { LanguageServer, computeTextChecksum } from '../shared/languageServer'
@@ -513,9 +513,18 @@ class ModulePersistence extends ObservableV2<{ removed: () => void }> {
       let parsedSpans
       const syncModule = new MutableModule(this.doc.ydoc)
       if (code !== this.syncedCode) {
-        const { root, spans } = parseBlockWithSpans(code, syncModule)
-        syncModule.syncRoot(root)
-        parsedSpans = spans
+        const syncRoot = syncModule.root()
+        if (syncRoot) {
+          const edit = syncModule.edit()
+          edit.getVersion(syncRoot).syncToCode(code)
+          const editedRoot = edit.root()
+          if (editedRoot instanceof Ast.BodyBlock) Ast.repair(editedRoot, edit)
+          Y.applyUpdateV2(this.doc.ydoc, Y.encodeStateAsUpdateV2(edit.ydoc))
+        } else {
+          const { root, spans } = parseBlockWithSpans(code, syncModule)
+          syncModule.syncRoot(root)
+          parsedSpans = spans
+        }
       }
       const astRoot = syncModule.root()
       if (!astRoot) return
@@ -539,7 +548,7 @@ class ModulePersistence extends ObservableV2<{ removed: () => void }> {
           metadataJson !== this.syncedMetaJson) &&
         nodeMeta.length !== 0
       ) {
-        const externalIdToAst = new Map<ExternalId, Ast>()
+        const externalIdToAst = new Map<ExternalId, Ast.Ast>()
         astRoot.visitRecursiveAst((ast) => {
           if (!externalIdToAst.has(ast.externalId)) externalIdToAst.set(ast.externalId, ast)
         })

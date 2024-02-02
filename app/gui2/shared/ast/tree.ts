@@ -23,6 +23,7 @@ import {
   print,
   printAst,
   printBlock,
+  syncToCode,
 } from '.'
 import { assert, assertDefined, assertEqual, bail } from '../util/assert'
 import type { Result } from '../util/data/result'
@@ -314,6 +315,11 @@ export abstract class MutableAst extends Ast {
     const parentId = this.fields.get('parent')
     if (parentId === 'ROOT_ID') return
     return this.module.checkedGet(parentId)
+  }
+
+  /** Modify this tree to represent the given code, while minimizing changes from the current set of `Ast`s. */
+  syncToCode(code: string) {
+    syncToCode(this, code)
   }
 
   ///////////////////
