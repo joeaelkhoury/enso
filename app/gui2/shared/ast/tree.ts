@@ -53,6 +53,15 @@ export interface AstFields {
   parent: AstId | undefined
   metadata: FixedMap<MetadataFields>
 }
+function allKeys<T>(keys: Record<keyof T, any>): (keyof T)[] {
+  return Object.keys(keys) as any
+}
+const astFieldKeys = allKeys<AstFields>({
+  id: null,
+  type: null,
+  parent: null,
+  metadata: null,
+})
 export abstract class Ast {
   readonly module: Module
   /** @internal */
@@ -187,6 +196,33 @@ export abstract class MutableAst extends Ast {
     if (parentId) {
       const parent = this.module.checkedGet(parentId)
       parent.replaceChild(this.id, replacement)
+      this.fields.set('parent', undefined)
+    }
+    return asOwned(this)
+  }
+
+  /**
+   * Remove the object from its parent, without offering any replacement.
+   *
+   * The parent will be left in an invalid state; attempting to read its fields would throw an exception. If the parent
+   * is present in the module, the module is in an invalid state.
+   *
+   * This can be safer than replacing the object with a placeholder that is not intended to be used.
+   *
+   * If a module is in an invalid state:
+   * - Tree repair would throw an exception, preventing committing the edit.
+   * - If the edit is committed anyway (e.g. due to the `skipTreeRepair` or `direct` edit flags), the edited module will
+   *   not be written to a file, as it is unprintable.
+   */
+  steal(): Owned<typeof this> {
+    const parentId = this.fields.get('parent')
+    if (parentId) {
+      const parent = this.module.checkedGet(parentId)
+      const parentFields = parent.fields as any as Map<string, unknown>
+      const parentKeys = parentFields.keys()
+      for (const key of parentKeys) {
+        if (!astFieldKeys.includes(key as keyof AstFields)) parentFields.delete(key)
+      }
       this.fields.set('parent', undefined)
     }
     return asOwned(this)

@@ -239,6 +239,11 @@ export class MutableModule implements Module {
     return this.replace(id, Wildcard.new(this)) || asOwned(this.checkedGet(id))
   }
 
+  /** See {@link MutableAst#steal}. */
+  steal(id: AstId): Owned {
+    return this.checkedGet(id).steal()
+  }
+
   updateValue<T extends MutableAst>(id: AstId, f: (x: Owned) => Owned<T>): T | undefined {
     return this.get(id)?.updateValue(f)
   }
